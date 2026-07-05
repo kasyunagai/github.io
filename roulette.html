@@ -138,8 +138,8 @@
     </div>
     <div class="editor">
       <h2>項目の編集</h2>
-      <p class="hint">1行に1項目ずつ入力してください。<br>編集するとすぐルーレットに反映されます。</p>
-      <textarea id="itemsInput" placeholder="項目1&#10;項目2&#10;項目3"></textarea>
+      <p class="hint">1行に1項目ずつ入力してください。<br>編集するとすぐルーレットに反映されます。<br>「項目名:2」のように数字を付けると、その項目の幅（当たりやすさ）を変えられます。</p>
+      <textarea id="itemsInput" placeholder="項目1&#10;項目2&#10;項目3:2"></textarea>
       <p class="note">※ 内容はこのブラウザに自動保存されます</p>
     </div>
   </div>
@@ -167,13 +167,37 @@
       parseItems();
     }
 
+    // 「名前:2」「名前：2」のように末尾に数字を付けると幅（重み）になる。省略時は1
     function parseItems() {
       items = itemsInput.value
         .split('\n')
-        .map(s => s.trim())
-        .filter(s => s !== '');
+        .map(line => {
+          const m = line.trim().match(/^(.+?)[:：]\s*([0-9]+(?:\.[0-9]+)?)$/);
+          if (m && parseFloat(m[2]) > 0) {
+            return { name: m[1].trim(), weight: parseFloat(m[2]) };
+          }
+          const name = line.trim();
+          return name ? { name, weight: 1 } : null;
+        })
+        .filter(item => item !== null && item.name !== '');
       spinBtn.disabled = spinning || items.length < 2;
       drawWheel();
+    }
+
+    function totalWeight() {
+      return items.reduce((sum, item) => sum + item.weight, 0);
+    }
+
+    // 各扇形の開始角（angle基準の相対角）を累積で返す
+    function arcOffsets() {
+      const total = totalWeight();
+      const offsets = [];
+      let acc = 0;
+      for (const item of items) {
+        offsets.push(acc);
+        acc += (item.weight / total) * Math.PI * 2;
+      }
+      return offsets;
     }
 
     function drawWheel() {
@@ -192,9 +216,12 @@
         return;
       }
 
-      const arc = (Math.PI * 2) / items.length;
+      const total = totalWeight();
+      const offsets = arcOffsets();
+      const baseFontSize = Math.min(30, 460 / Math.max(...items.map(item => item.name.length)));
       items.forEach((item, i) => {
-        const start = angle + i * arc;
+        const start = angle + offsets[i];
+        const arc = (item.weight / total) * Math.PI * 2;
         // 扇形
         ctx.fillStyle = COLORS[i % COLORS.length];
         ctx.beginPath();
@@ -206,16 +233,17 @@
         ctx.lineWidth = 3;
         ctx.stroke();
 
-        // ラベル
+        // ラベル（幅の狭い扇形は文字も小さくする）
         ctx.save();
         ctx.translate(CX, CY);
         ctx.rotate(start + arc / 2);
         ctx.fillStyle = '#fff';
-        const fontSize = Math.min(30, 460 / Math.max(...items.map(s => s.length)));
-        ctx.font = `bold ${Math.max(14, fontSize)}px sans-serif`;
+        const fitToArc = RADIUS * arc * 0.5;
+        const fontSize = Math.max(11, Math.min(baseFontSize, fitToArc));
+        ctx.font = `bold ${fontSize}px sans-serif`;
         ctx.textAlign = 'right';
         ctx.textBaseline = 'middle';
-        ctx.fillText(item, RADIUS - 24, 0);
+        ctx.fillText(item.name, RADIUS - 24, 0);
         ctx.restore();
       });
 
@@ -258,13 +286,19 @@
     }
 
     function showResult() {
-      // 針は真上（-90°）。針の位置にある扇形を求める
-      const arc = (Math.PI * 2) / items.length;
+      // 針は真上（-90°）。針の位置にある扇形を累積角から求める
       const pointerAngle = -Math.PI / 2;
       let a = (pointerAngle - angle) % (Math.PI * 2);
       if (a < 0) a += Math.PI * 2;
-      const index = Math.floor(a / arc);
-      resultEl.textContent = '🎉 ' + items[index];
+      const offsets = arcOffsets();
+      let index = items.length - 1;
+      for (let i = 0; i < offsets.length - 1; i++) {
+        if (a >= offsets[i] && a < offsets[i + 1]) {
+          index = i;
+          break;
+        }
+      }
+      resultEl.textContent = '🎉 ' + items[index].name;
     }
 
     itemsInput.addEventListener('input', () => {
