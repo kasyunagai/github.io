@@ -1,0 +1,280 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>ルーレット</title>
+  <style>
+    * {
+      margin: 0;
+      padding: 0;
+      box-sizing: border-box;
+    }
+    body {
+      font-family: "Hiragino Kaku Gothic ProN", "Hiragino Sans", Meiryo, sans-serif;
+      background: #f0f2f5;
+      color: #333;
+      min-height: 100vh;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      padding: 24px 16px;
+    }
+    h1 {
+      font-size: 24px;
+      margin-bottom: 16px;
+    }
+    .main {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 32px;
+      justify-content: center;
+      align-items: flex-start;
+      max-width: 900px;
+      width: 100%;
+    }
+    .wheel-area {
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      gap: 16px;
+    }
+    .wheel-wrapper {
+      position: relative;
+      width: 320px;
+      height: 320px;
+    }
+    /* 上部の針 */
+    .pointer {
+      position: absolute;
+      top: -6px;
+      left: 50%;
+      transform: translateX(-50%);
+      width: 0;
+      height: 0;
+      border-left: 14px solid transparent;
+      border-right: 14px solid transparent;
+      border-top: 26px solid #e74c3c;
+      z-index: 2;
+      filter: drop-shadow(0 2px 2px rgba(0,0,0,.3));
+    }
+    canvas {
+      width: 100%;
+      height: 100%;
+      border-radius: 50%;
+      box-shadow: 0 4px 16px rgba(0,0,0,.15);
+    }
+    .spin-btn {
+      font-size: 18px;
+      font-weight: bold;
+      color: #fff;
+      background: #e74c3c;
+      border: none;
+      border-radius: 8px;
+      padding: 12px 48px;
+      cursor: pointer;
+      transition: background .2s, transform .1s;
+    }
+    .spin-btn:hover:not(:disabled) { background: #c0392b; }
+    .spin-btn:active:not(:disabled) { transform: scale(.97); }
+    .spin-btn:disabled {
+      background: #bbb;
+      cursor: not-allowed;
+    }
+    .result {
+      min-height: 40px;
+      font-size: 22px;
+      font-weight: bold;
+      color: #e74c3c;
+      text-align: center;
+    }
+    .editor {
+      background: #fff;
+      border-radius: 12px;
+      padding: 20px;
+      box-shadow: 0 2px 8px rgba(0,0,0,.08);
+      width: 280px;
+    }
+    .editor h2 {
+      font-size: 16px;
+      margin-bottom: 8px;
+    }
+    .editor p.hint {
+      font-size: 12px;
+      color: #888;
+      margin-bottom: 8px;
+    }
+    textarea {
+      width: 100%;
+      height: 220px;
+      font-size: 15px;
+      line-height: 1.7;
+      padding: 8px;
+      border: 1px solid #ccc;
+      border-radius: 6px;
+      resize: vertical;
+    }
+    textarea:focus {
+      outline: none;
+      border-color: #e74c3c;
+    }
+    .editor .note {
+      font-size: 11px;
+      color: #aaa;
+      margin-top: 8px;
+    }
+  </style>
+</head>
+<body>
+  <h1>ルーレット</h1>
+  <div class="main">
+    <div class="wheel-area">
+      <div class="wheel-wrapper">
+        <div class="pointer"></div>
+        <canvas id="wheel" width="640" height="640"></canvas>
+      </div>
+      <button class="spin-btn" id="spinBtn">回す！</button>
+      <div class="result" id="result"></div>
+    </div>
+    <div class="editor">
+      <h2>項目の編集</h2>
+      <p class="hint">1行に1項目ずつ入力してください。<br>編集するとすぐルーレットに反映されます。</p>
+      <textarea id="itemsInput" placeholder="項目1&#10;項目2&#10;項目3"></textarea>
+      <p class="note">※ 内容はこのブラウザに自動保存されます</p>
+    </div>
+  </div>
+
+  <script>
+    const canvas = document.getElementById('wheel');
+    const ctx = canvas.getContext('2d');
+    const spinBtn = document.getElementById('spinBtn');
+    const resultEl = document.getElementById('result');
+    const itemsInput = document.getElementById('itemsInput');
+
+    const STORAGE_KEY = 'roulette-items';
+    const COLORS = ['#e74c3c', '#f39c12', '#f1c40f', '#2ecc71', '#1abc9c', '#3498db', '#9b59b6', '#e91e63'];
+    const CX = canvas.width / 2;
+    const CY = canvas.height / 2;
+    const RADIUS = canvas.width / 2 - 8;
+
+    let items = [];
+    let angle = 0;          // 現在の回転角（ラジアン）
+    let spinning = false;
+
+    function loadItems() {
+      const saved = localStorage.getItem(STORAGE_KEY);
+      itemsInput.value = saved !== null ? saved : '項目1\n項目2\n項目3';
+      parseItems();
+    }
+
+    function parseItems() {
+      items = itemsInput.value
+        .split('\n')
+        .map(s => s.trim())
+        .filter(s => s !== '');
+      spinBtn.disabled = spinning || items.length < 2;
+      drawWheel();
+    }
+
+    function drawWheel() {
+      ctx.clearRect(0, 0, canvas.width, canvas.height);
+
+      if (items.length === 0) {
+        ctx.fillStyle = '#ddd';
+        ctx.beginPath();
+        ctx.arc(CX, CY, RADIUS, 0, Math.PI * 2);
+        ctx.fill();
+        ctx.fillStyle = '#888';
+        ctx.font = 'bold 28px sans-serif';
+        ctx.textAlign = 'center';
+        ctx.textBaseline = 'middle';
+        ctx.fillText('項目を入力してください', CX, CY);
+        return;
+      }
+
+      const arc = (Math.PI * 2) / items.length;
+      items.forEach((item, i) => {
+        const start = angle + i * arc;
+        // 扇形
+        ctx.fillStyle = COLORS[i % COLORS.length];
+        ctx.beginPath();
+        ctx.moveTo(CX, CY);
+        ctx.arc(CX, CY, RADIUS, start, start + arc);
+        ctx.closePath();
+        ctx.fill();
+        ctx.strokeStyle = '#fff';
+        ctx.lineWidth = 3;
+        ctx.stroke();
+
+        // ラベル
+        ctx.save();
+        ctx.translate(CX, CY);
+        ctx.rotate(start + arc / 2);
+        ctx.fillStyle = '#fff';
+        const fontSize = Math.min(30, 460 / Math.max(...items.map(s => s.length)));
+        ctx.font = `bold ${Math.max(14, fontSize)}px sans-serif`;
+        ctx.textAlign = 'right';
+        ctx.textBaseline = 'middle';
+        ctx.fillText(item, RADIUS - 24, 0);
+        ctx.restore();
+      });
+
+      // 中心の円
+      ctx.fillStyle = '#fff';
+      ctx.beginPath();
+      ctx.arc(CX, CY, 28, 0, Math.PI * 2);
+      ctx.fill();
+    }
+
+    function spin() {
+      if (spinning || items.length < 2) return;
+      spinning = true;
+      spinBtn.disabled = true;
+      itemsInput.disabled = true;
+      resultEl.textContent = '';
+
+      const duration = 4000; // ms
+      const startAngle = angle;
+      // 5〜8回転 + ランダムな角度
+      const totalRotation = Math.PI * 2 * (5 + Math.random() * 3);
+      const startTime = performance.now();
+
+      function frame(now) {
+        const t = Math.min((now - startTime) / duration, 1);
+        const eased = 1 - Math.pow(1 - t, 3); // ease-out
+        angle = startAngle + totalRotation * eased;
+        drawWheel();
+
+        if (t < 1) {
+          requestAnimationFrame(frame);
+        } else {
+          spinning = false;
+          itemsInput.disabled = false;
+          spinBtn.disabled = items.length < 2;
+          showResult();
+        }
+      }
+      requestAnimationFrame(frame);
+    }
+
+    function showResult() {
+      // 針は真上（-90°）。針の位置にある扇形を求める
+      const arc = (Math.PI * 2) / items.length;
+      const pointerAngle = -Math.PI / 2;
+      let a = (pointerAngle - angle) % (Math.PI * 2);
+      if (a < 0) a += Math.PI * 2;
+      const index = Math.floor(a / arc);
+      resultEl.textContent = '🎉 ' + items[index];
+    }
+
+    itemsInput.addEventListener('input', () => {
+      localStorage.setItem(STORAGE_KEY, itemsInput.value);
+      parseItems();
+    });
+
+    spinBtn.addEventListener('click', spin);
+
+    loadItems();
+  </script>
+</body>
+</html>
