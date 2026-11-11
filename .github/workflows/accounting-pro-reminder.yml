@@ -1,0 +1,27 @@
+name: アカウンティングプロ予定更新リマインド
+
+on:
+  schedule:
+    # GitHub ActionsのcronはUTC。日本時間(JST=UTC+9)で以下を送信:
+    - cron: "30 23 * * 2"   # 水 08:30 JST
+    - cron: "0 6 * * 3"     # 水 15:00 JST
+    - cron: "30 23 * * 3"   # 木 08:30 JST
+    - cron: "0 4 * * 4"     # 木 13:00 JST
+  workflow_dispatch: {}      # 手動テスト送信用
+
+jobs:
+  send:
+    runs-on: ubuntu-latest
+    steps:
+      - name: メール送信
+        uses: dawidd6/action-send-mail@v3
+        with:
+          server_address: smtp.gmail.com
+          server_port: 465
+          secure: true
+          username: ${{ secrets.MAIL_USERNAME }}
+          password: ${{ secrets.MAIL_PASSWORD }}
+          from: アカウンティングプロ リマインド <${{ secrets.MAIL_USERNAME }}>
+          to: tipxique@gmail.com
+          subject: アカウンティングプロの来週の予定更新した？
+          body: アカウンティングプロの来週の予定更新した？
